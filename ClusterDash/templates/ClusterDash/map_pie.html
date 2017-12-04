@@ -1,0 +1,182 @@
+{% load staticfiles %}
+<script async defer
+src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAWE9XB7bMFCJoFfwrWhfiV3hy9WpMsbvs">
+</script>
+<script src="{% static 'ClusterDash/chart.js' %}"></script>
+
+<script type="application/javascript">
+    {% load staticfiles %}
+
+    var map;
+    var markers = [];
+
+var filter;
+var val1Dimension;
+var val1Grouping;
+var val2Dimension;
+var infoWindow;
+var charts;
+var domCharts;
+
+var latDimension;
+var lngDimension;
+var idDimension;
+var idGrouping;
+
+
+    function init() {
+          initMap();
+          initCrossfilter();
+
+          // bind map bounds to lat/lng filter dimensions
+          latDimension = filter.dimension(function(p) { return p.lat; });
+          lngDimension = filter.dimension(function(p) { return p.lng; });
+          google.maps.event.addListener(map, 'bounds_changed', function() {
+            var bounds = this.getBounds();
+            var northEast = bounds.getNorthEast();
+            var southWest = bounds.getSouthWest();
+
+            // NOTE: need to be careful with the dateline here
+            lngDimension.filterRange([southWest.lng(), northEast.lng()]);
+            latDimension.filterRange([southWest.lat(), northEast.lat()]);
+
+            // NOTE: may want to debounce here, perhaps on requestAnimationFrame
+            updateCharts();
+          });
+
+          // dimension and group for looking up currently selected markers
+          idDimension = filter.dimension(function(p, i) { return i; });
+          idGrouping = idDimension.group(function(id) { return id; });
+
+          renderAll();
+}
+
+
+
+    function initMap() {
+        google.maps.visualRefresh = true;
+        var points = {{ points|safe }};
+        var myLatlng = new google.maps.LatLng(28.7041, 77.1025);
+        var mapOptions = {
+            zoom: 11,
+            center: myLatlng,
+            mapTypeId: google.maps.MapTypeId.ROADMAP,
+            mapTypeControl: false,
+            streetViewControl: false,
+            panControl: false
+        };
+        map = new google.maps.Map(document.getElementById('map-div'), mapOptions);
+
+        // create array of markers from points and add them to the map
+        for (var i = 0; i < 1; i++) {
+            var point = points[i];
+            markers[i] = new google.maps.Marker({
+                position: new google.maps.LatLng(point.lat, point.lon),
+                map: map,
+                title: 'marker ' + i
+            });
+            infoWindow = new google.maps.InfoWindow({
+{#               content:'<h1>' + point.pstation + '</h1>'#}
+                content:'Hello'
+            });
+            markers[i].addListener('click',function () {
+               infoWindow.open(map,markers[i]);
+            });
+        }
+
+
+        console.log("hello");
+    }
+
+
+
+
+{#    function initCrossfilter() {#}
+{#        var clusterTypeChart = dc.pieChart("#pie");#}
+{##}
+{##}
+{#        d3.csv("{% static 'ClusterDash/clustering_police_station22.csv'%}",function(err,data){#}
+{#           if(err)#}
+{#                   throw err;#}
+{##}
+{#           var ndx = crossfilter(data);#}
+{#           var all = ndx.groupAll();#}
+{#           var clusterType = ndx.dimension(function(d){ return d["cluster"] });#}
+{#           var clusterGroup = clusterType.group();#}
+{##}
+{#           clusterTypeChart#}
+{#                   .dimension(clusterType)#}
+{#                   .group(clusterGroup)#}
+{#                   .width(200)#}
+{#                   .height(300);#}
+{##}
+{#           domCharts = d3.selectAll(".chart")#}
+{#                    .data(clusterTypeChart)#}
+{#                    .each(function(chart) { chart.on("brush", renderAll).on("brushend", renderAll); });#}
+{#           dc.renderAll();#}
+{#        });#}
+{##}
+{#    }#}
+
+    function initCrossfilter() {
+
+        var points = {{ points|safe }};
+          filter = crossfilter(points);
+
+          // simple dimensions and groupings for major variables
+          val1Dimension = filter.dimension(
+              function(p) {
+                return p.cluster;
+              });
+          val1Grouping = val1Dimension.group(
+              function(v) {
+                return Math.floor(v);
+              });
+
+          charts = [
+            barChart()
+            .dimension(val1Dimension)
+            .group(val1Grouping)
+            .x(d3.scale.linear()
+                .domain([0, 10])
+                .rangeRound([0, 10 * 10]))
+
+          ];
+
+          // bind charts to dom
+          domCharts = d3.selectAll(".chart")
+              .data(charts)
+              .each(function(chart) { chart.on("brush", renderAll).on("brushend", renderAll); });
+}
+
+function render(method) {
+  d3.select(this).call(method);
+}
+
+// Renders all of the charts
+function updateCharts() {
+  domCharts.each(render);
+}
+
+// set visibility of markers based on crossfilter
+function updateMarkers() {
+  var pointIds = idGrouping.all();
+  for (var i = 0; i < pointIds.length; i++) {
+    var pointId = pointIds[i];
+    markers[pointId.key].setVisible(pointId.value > 0);
+  }
+}
+
+// Whenever the brush moves, re-render charts and map markers
+function renderAll() {
+  updateMarkers();
+  updateCharts();
+}
+
+// Reset a particular histogram
+window.reset = function(i) {
+  charts[i].filter(null);
+  renderAll();
+};
+
+</script>

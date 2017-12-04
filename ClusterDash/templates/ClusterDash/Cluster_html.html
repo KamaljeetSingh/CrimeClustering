@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    {% load staticfiles %}
+    <meta charset="UTF-8">
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css">
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.2.1/jquery.min.js"></script>
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js"></script>
+    <link rel="stylesheet" type="text/css" href="{% static 'ClusterDash/clus.css' %}">
+    <script src="http://maps.googleapis.com/maps/api/js?sensor=false"></script>
+    <script src="{% static 'ClusterDash/chart.js' %}"></script>
+
+    <!-- Crossfilter & DC -->
+
+    <script type="text/javascript" src="http://d3js.org/d3.v4.min.js" charset="utf-8"></script>
+    <link rel="stylesheet" type="text/css" href="https://dc-js.github.io/dc.js/css/dc.css" />
+    <script src="https://dc-js.github.io/dc.js/js/d3.js"></script>
+    <script src="https://dc-js.github.io/dc.js/js/crossfilter.js"></script>
+    <script src="https://dc-js.github.io/dc.js/js/dc.js"></script>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.2.1/jquery.min.js"></script>
+{#    {% include 'ClusterDash/map_pie.html' %}#}
+    <title>Clustering Dashboard</title>
+</head>
+<body style="background-color:#f4f4f4; color: #363636;">
+<div class="row container-fluid">
+    <div class="col-md-3" style="background-color:#eeeeee;">
+        <div style="height: 100%; padding: 10px;">
+        <h3 style="border-bottom: thin solid gray">Clustering Customization</h3>
+            <h4><strong>Number of Clusters</strong></h4>
+        <form method="post" action="">
+            {% csrf_token %}
+            <input type="number" name="nocluster" id="nocluster" style="width: 70px;">
+            <br>
+            <h4><strong>Select Features</strong></h4>
+             <label style="font-weight: normal;">Select All</label>
+             <input type="checkbox" name="all">
+            <br>
+            {% for x in features %}
+                <div class="col-md-12 boxes">
+                    <div class="col-md-10">
+                        <label style="font-weight: normal;">{{ x }}</label>
+                    </div>
+                    <div class="col-md-2">
+                        <input type="checkbox" name="charges" value="{{ x }}">
+                    </div>
+                </div>
+            {% endfor %}
+            <div class="row text-center">
+                <button type="submit" name="pie_sub">Submit</button>
+            </div>
+        </form>
+    </div>
+    </div>
+    <div id="cluster_info" class="col-md-9 text-center">
+        <div id="map-div"></div>
+            <div id="charts">
+                <div id="val-chart" class="chart">
+                    <div class="title"><h4>Clustering Count Chart</h4></div>
+                    {% if flag == 0 %}
+                    <h5 style="color: #666666">Nothing to show</h5>
+                    {% endif %}
+                </div>
+            </div>
+        {% if flag == 1 %}
+            <div class="row text-center"><h4>Top features of each cluster</h4></div>
+            {% for j in top %}
+                <div class="col-md-offset-1 col-md-3 text-left clus_info" id="mydiv{{ forloop.counter0 }}">
+                    <h4>Cluster {{ forloop.counter0 }}</h4>
+                    <ul>
+                        {% for x in j %}
+                            <li>{{ x }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            {% endfor %}
+            <div class="row col-md-12" style="border-bottom: thin solid lightgray; margin-bottom: 10px;">
+                <form target="_blank" method="post" action="" enctype="multipart/form-data">
+                {% csrf_token %}
+                    <button type="submit" name="pic_img" style="margin: 20px;">Show Map</button>
+                </form>
+            </div>
+            <div class="col-md-12" id="pstation_info">
+                <div class="location">
+                </div>
+            </div>
+        {% endif %}
+    </div>
+</div>
+
+
+
+
+
+<!-- ################ JAVASCRIPTS ############### -->
+
+<script type="application/javascript">
+    $(document).ready(function () {
+        document.getElementById('nocluster').value=0;
+{#        $('#nocluster').value=0;#}
+        $('input[name="all"]').change(function () {
+            if (this.checked)
+            {
+{#                 alert("Thanks for checking me");#}
+                 $('input[name="charges"]').prop("checked" , true);
+            }
+            else
+            {
+{#                alert("Oh no");#}
+                $('input[name="charges"]').prop("checked" , false);
+            }
+
+        });
+    });
+
+</script>
+
+<script type="application/javascript">
+    {% load staticfiles %}
+
+    var map;
+    var markers = [];
+
+    var filter;
+    var val1Dimension;
+    var val1Grouping;
+    var charts;
+    var domCharts;
+
+    var latDimension;
+    var lngDimension;
+    var idDimension;
+    var idGrouping;
+
+
+    function init() {
+          initMap();
+          initCrossfilter();
+
+          // bind map bounds to lat/lng filter dimensions
+          latDimension = filter.dimension(function(p) { return p.lat; });
+          lngDimension = filter.dimension(function(p) { return p.lng; });
+          google.maps.event.addListener(map, 'bounds_changed', function() {
+            var bounds = this.getBounds();
+            var northEast = bounds.getNorthEast();
+            var southWest = bounds.getSouthWest();
+
+            // NOTE: need to be careful with the dateline here
+            lngDimension.filterRange([southWest.lng(), northEast.lng()]);
+            latDimension.filterRange([southWest.lat(), northEast.lat()]);
+
+            // NOTE: may want to debounce here, perhaps on requestAnimationFrame
+            updateCharts();
+          });
+
+          // dimension and group for looking up currently selected markers
+          idDimension = filter.dimension(function(p, i) { return i; });
+          idGrouping = idDimension.group(function(id) { return id; });
+
+          renderAll();
+}
+
+
+
+    function initMap() {
+        google.maps.visualRefresh = true;
+        var points = {{ points|safe }};
+        var myLatlng = new google.maps.LatLng(28.6541, 77.2525);
+        var mapOptions = {
+            zoom: 10,
+            center: myLatlng,
+            mapTypeId: google.maps.MapTypeId.ROADMAP,
+            mapTypeControl: false,
+            streetViewControl: false,
+            panControl: false
+        };
+        map = new google.maps.Map(document.getElementById('map-div'), mapOptions);
+
+        // create array of markers from points and add them to the map
+        for (var i = 0; i < points.length; i++) {
+            (function(){
+            var point = points[i];
+            var html_content ='<div class="container-fluid">'+
+                    '<div class="row text-center" style="border-radius:2%; padding:2px; color:white; background-color:#4c95b0;">'+
+                    '<span style="font-size:18px;"><a href="{% url 'cluster:cluster_home' %}" id="place" style="color:white;">' +
+                     point.pstation + '</a></span>' + '</div>' +
+                    '<div class="row"> <span>Cluster ' + point.cluster + '</span></div>' + '</div>';
+
+            markers[i] = new google.maps.Marker({
+                position: new google.maps.LatLng(point.lat, point.lng),
+                map: map,
+                title: 'marker ' + i
+            });
+            var infoWindow = new google.maps.InfoWindow({
+               content:html_content,
+               position: {lat: point.lat, lng: point.lng}
+            });
+            markers[i].addListener('mouseover',function () {
+               infoWindow.open(map,markers[i]);
+            });
+
+{#            markers[i].addListener('mouseout',function () {#}
+{#               infoWindow.close(map,markers[i]);#}
+{#            });#}
+            })();
+
+        }
+        console.log("hello");
+    }
+
+    function initCrossfilter() {
+
+        var points = {{ points|safe }};
+        var k = parseInt({{ k }});
+
+          filter = crossfilter(points);
+
+          // simple dimensions and groupings for major variables
+          val1Dimension = filter.dimension(
+              function(p) {
+                return p.cluster;
+              });
+          val1Grouping = val1Dimension.group(
+              function(v) {
+                return Math.floor(v);
+              });
+
+          charts = [
+              barChart()
+                  .dimension(val1Dimension)
+                  .group(val1Grouping)
+                  .x(d3.scale.linear()
+                      .domain([0,k])
+                      .rangeRound([0,k*50]))
+          ];
+
+          // bind charts to dom
+          var margin=40;
+var width = 600-margin*2, height=600-margin*2;
+
+
+          domCharts = d3.selectAll(".chart")
+              .data(charts)
+              .each(function(chart) { chart.on("brush", renderAll).on("brushend", renderAll); });
+}
+
+    function render(method) {
+      d3.select(this).call(method);
+    }
+
+    // Renders all of the charts
+    function updateCharts() {
+      domCharts.each(render);
+    }
+
+    // set visibility of markers based on crossfilter
+    function updateMarkers() {
+      var pointIds = idGrouping.all();
+      for (var i = 0; i < pointIds.length; i++) {
+        var pointId = pointIds[i];
+        markers[pointId.key].setVisible(pointId.value > 0);
+      }
+    }
+
+    // Whenever the brush moves, re-render charts and map markers
+    function renderAll() {
+      updateMarkers();
+      updateCharts();
+    }
+
+    // Reset a particular histogram
+    window.reset = function(i) {
+      charts[i].filter(null);
+      renderAll();
+    };
+
+</script>
+
+<script type="application/javascript">
+    $(document).ready(function () {
+        $(document).on('click', '#place', function (e) {
+            e.preventDefault();
+            var text=this.text;
+            $.ajax({
+                type: "post",
+                url: $(this).attr("href"),
+                data: {
+                    text:this.text,
+                    dataType:"json",
+                    contentType: "application/json;charset=utf-8",
+                    csrfmiddlewaretoken:$('input[name=csrfmiddlewaretoken]').val()
+                },
+                success: function (data) {
+                    $('.location').html('<h4>Charges Information of <b>'+ text + '</b></h4>');
+
+                    var ndx = crossfilter(data),
+                    countryDimension = ndx.dimension(function (d) {
+                        return d.charge;
+                    }),
+                    countryGroup =  countryDimension.group().reduceSum(function(d) { return d.value; }),
+                    chart = dc.barChart("#pstation_info");
+
+                    chart
+                    .height(400)
+                    .width(900)
+                    .dimension(countryDimension)
+                    .group(countryGroup)
+                    .x(d3.scale.ordinal().domain(ndx.dimension(function (d) {return d.charge})))
+                    .xUnits(dc.units.ordinal)
+                    .yAxisLabel("Number of Occurances")
+                    .margins({ top: 10, left: 40, right: 10, bottom: 100 })
+                    .elasticY(true);
+
+                    chart.renderlet(function (chart) {
+                        // rotate x-axis labels
+                        chart.selectAll('g.x text')
+                            .attr('transform', "rotate(-90)");
+                    });
+
+                    dc.renderAll();
+                }
+            });
+        });
+    });
+
+
+
+</script>
+
+<script>
+      document.addEventListener('DOMContentLoaded', init, false);
+</script>
+
+
+</body>
+</html>
