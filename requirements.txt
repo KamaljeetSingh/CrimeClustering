@@ -22,7 +22,7 @@ matplotlib==2.0.0
 nbconvert==4.2.0
 nbformat==4.2.0
 networkx==1.11
-nltk==3.2.2
+nltk==3.2.5
 notebook==4.3.1
 numexpr==2.6.1
 numpy==1.11.3
