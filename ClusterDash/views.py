@@ -54,7 +54,6 @@ def cluster_home(request):
     features_all.pop(0)
     features_all.pop()
     features_all.pop()
-    cl.give_row("CIVIL LINES")
     points = 20
     return render(request, 'ClusterDash/Cluster_html.html', {'features': features_all, 'flag':0, 'points':points})
 

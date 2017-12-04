@@ -123,7 +123,6 @@ class cluster_class:
     def give_row(self,place):
         diction_list = []
         df_list = self.df.values.T.tolist()
-        print(df_list)
         ind = self.df[self.df['pstation'] == place].index.values.astype(int)[0]
         print(df_list[1][ind])
         i=0
