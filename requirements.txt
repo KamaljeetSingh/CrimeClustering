@@ -12,6 +12,7 @@ dj-database-url==0.4.2
 Django==1.11.3
 Flask==0.12
 Flask-Cors==3.0.2
+gunicorn==19.6.0
 imagesize==0.7.1
 jsonschema==2.5.1
 jupyter==1.0.0
